@@ -1,0 +1,117 @@
+import glob
+from WordFreq_prec.WordFreq_Getbins import get_bins
+import numpy as np
+import matplotlib.pyplot as plt
+from WordFreq_prec.WordFreq_Excel import M
+import scipy.io
+import scipy.stats as stats
+import json
+
+# REPLICATION OF LOHNAS PAPER WITH ltpFR2 with participants who finished sessions, but with concreteness
+
+def get_ltpFR2(files_ltpFR2):
+
+
+    def count_presentations(a):
+    # Count the number of items presented in each bin
+        counts_pres = []
+        for k in range(0, 20):
+            counts_pres.append(len(np.where((a == k))[0]))
+        return np.array([counts_pres])
+
+    def count_recalls(recalled, a):
+        # Count the number of recalled items recalled in each bin
+        counts_rec = []
+        for k in range(0, 20):
+            counts_rec.append(len(np.where((a == k) & (recalled == 1))[0]))
+        return np.array([counts_rec])
+
+
+    def prob(pres_counts, rec_counts):
+
+        # Find the probability of recall by dividing counts of presented by counts recalled
+        probabilities = rec_counts / pres_counts
+        return probabilities
+
+    # Running the get_bins() function from another Python file to get the word dict with word frequencies
+    word_dict = get_bins()
+
+    # Creating an empty array to put in probability of recall in each of the ten bins
+    all_prob = np.zeros((1,20))
+
+    # Participant counter
+    n = 0
+
+    participant_probs_ltpFR2 = []
+
+
+    for f in files_ltpFR2:
+        if f not in ['/Users/adaaka/rhino_mount/data/eeg/scalp/ltp/ltpFR2/behavioral/data/beh_data_LTP331.json']:
+        # Read in data
+        #test_mat_file = scipy.io.loadmat(f, squeeze_me=True, struct_as_record=False)
+            with open(f, 'r') as jsfile:
+                data = json.load(jsfile)
+                print(f)
+                session_mat = np.array(data['session'])
+                pres_mat = np.array(data['pres_nos'], dtype='int16')
+                rec_mat = np.array(data['recalled'])
+                # session_mat = test_mat_file['data'].session
+                # if len(session_mat) < 576:  # and not (session_mat.max() == 7 and len(session_mat) == 168); ADD TO LTPFR
+                #     print('Skipping because participant did not finish...')
+                #     continue
+
+                # pres_mat = test_mat_file['data'].pres_itemnos.astype('int16')
+                # rec_mat = test_mat_file['data'].pres.recalled
+
+                pres_mat = pres_mat[np.where(session_mat != 24)]
+                rec_mat = rec_mat[np.where(session_mat != 24)]
+                pres_bins = np.copy(pres_mat)
+                rec_bins = np.copy(rec_mat)
+
+                # If the word id is not in the word dict, change their bin number to -1
+                for i in range(pres_bins.shape[0]):
+                    for j in range(pres_bins.shape[1]):
+                        if pres_bins[i][j] not in word_dict:
+                            pres_bins[i][j] = -1
+
+
+
+                # Change the word ids to bin numbers
+                for id, bin in word_dict.items():
+                    pres_bins[pres_mat==id] = bin
+                rec_bins = pres_bins
+
+                # Count the number of word presentations, recalls, and find probability of recall for each bin for each participant
+                pres_counts = count_presentations(pres_bins)
+                rec_counts = count_recalls(rec_mat, rec_bins)
+                probi = (prob(pres_counts, rec_counts))
+                participant_probs_ltpFR2.append(probi)
+                all_prob += probi
+                n += 1
+
+    # Divide the total p_rec in each bin by the total number of participants to find the single p_rec value of each bin
+    all_prob /= n
+    participant_probs_ltpFR2 = np.array(participant_probs_ltpFR2)
+    # Find the SEM & SDs for the error bars of the graph
+    sem_ltpFR_2 = scipy.stats.sem(participant_probs_ltpFR2, axis=0)
+    sd_ltpFR_2 = np.std(participant_probs_ltpFR2, axis=0)
+    return sem_ltpFR_2, all_prob, sd_ltpFR_2
+
+
+if __name__ == "__main__":
+    #files_ltpFR2 = glob.glob('/Users/adaaka/rhino_mount/data/eeg/scalp/ltp/ltpFR2/behavioral/data/stat_data_LTP*.mat')
+    files_ltpFR2 = glob.glob('/Users/adaaka/rhino_mount/data/eeg/scalp/ltp/ltpFR2/behavioral/data/beh_data_LTP[0-9][0-9][0-9].json')
+    #files_ltpFR2 = glob.glob('/Users/adaaka/rhino_mount/data/eeg/scalp/ltp/ltpFR2/behavioral/data/beh_data_LTP25[0-9].json')
+
+    sem_ltpFR_2, all_prob, sd_ltpFR_2 =  get_ltpFR2(files_ltpFR2)
+    print(sem_ltpFR_2, all_prob, sd_ltpFR_2)
+
+
+    plt.suptitle('Word Frequency', fontsize=20)
+    plt.xlabel('Word Frequency', fontsize=18)
+    plt.ylabel('Recall Probability', fontsize=16)
+    f_all_ltpFR2 = plt.errorbar(M, all_prob[0], yerr = sem_ltpFR_2[0])
+    plt.ylim(.40, .65)
+    plt.xscale('log')
+    plt.savefig("WordFreqlvsprec.Jan16.pdf")
+    plt.show()
